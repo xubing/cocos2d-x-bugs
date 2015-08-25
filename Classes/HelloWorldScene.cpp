@@ -73,7 +73,6 @@ bool HelloWorld::init()
 
     Vec2 screenCenter = Vec2(visibleSize.width/2 + origin.x, visibleSize.height/2 + origin.y);
     
-    // Bottom left corner is center of screen if default camera and camera 1 have same settings.
     auto sprite = Sprite::create("HelloWorld.png");
     sprite->setPosition(screenCenter);
 
