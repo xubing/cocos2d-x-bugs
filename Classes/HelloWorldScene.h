@@ -6,17 +6,32 @@
 class HelloWorld : public cocos2d::Layer
 {
 public:
-    // there's no 'id' in cpp, so we recommend returning the class instance pointer
     static cocos2d::Scene* createScene();
-
-    // Here's a difference. Method 'init' in cocos2d-x returns bool, instead of returning 'id' in cocos2d-iphone
     virtual bool init();
-    
-    // a selector callback
-    void menuCloseCallback(cocos2d::Ref* pSender);
-    
-    // implement the "static create()" method manually
+    virtual void onExit();
     CREATE_FUNC(HelloWorld);
+    
+private:
+    void setupTouchControls();
+    void update(float dt);
+    
+    cocos2d::EventListenerTouchAllAtOnce    * _touchEventListener;
+    Node                                    * _worldContainer;
+    cocos2d::Camera                         * _worldCamera;
+    float                                   _zoomValue;
+    float                                   _zoomStepSize;
+    float                                   _zoomDirection;
+    
+    float                                   _moveValue;
+    float                                   _moveStepSize;
+    float                                   _moveDirection;
+    float                                   _zoomFarPlaneHeightFactor;
+    float                                   _openGLAspectRatio;
+    cocos2d::Vec2                           _touchLocation;
+    cocos2d::Vec2                           _previousTouchLocation;
+    cocos2d::Sprite                         * _sprite;
+    cocos2d::Size                           _screenSize;
+    cocos2d::Vec2                           _halfScreenSizeVect;
 };
 
 #endif // __HELLOWORLD_SCENE_H__

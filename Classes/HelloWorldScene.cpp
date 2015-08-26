@@ -18,90 +18,158 @@ bool HelloWorld::init()
         return false;
     }
     
-    
-    // The Issue
-    //
-    // There does not seem to be a way to make UI HUD elements such as the MenuItemImage only touchable
-    // by coordinates touched in the default camera. Or for specific alternative cameras.
-    //
-    // This issue seems to be a result of the EventDispatcher::dispatchTouchEventToListeners cycling
-    // through all cameras on line 834 of CCEventDispatcher.cpp of Cocos2d-x 3.8 beta 0.
-    //
-    // e.g. touch the same coordinates of the MenuItemImage in the view of camera 1 and the button
-    // will be pressed. This creates a problem if world node has the same coordiantes as the hud node.
-    // Maybe the solution is to not let the coordinates overlap?
-    //
-    // Or maybe for efficiency reasons and to fix the above issue, a filter could be applied somehow to
-    // only forward events from cameras that the API user selects.
-    //
-    // Another way of describing the issue:
-    // The issue is that that MenuItemImage by default (all Nodes do) has the CameraFlag::DEFAULT
-    // mask. This may stop the button from being visible in camera 1. However, if the rect that is
-    // defined for the button in the default camera is touched in camera 1, an event is dispatched
-    // as if the button were pressed in the defualt camera's view.
-    //
-    // This issue can be demonstrated by this code by touching the HelloWorld.png sprite and observe
-    // that the button is being presssed and released.
-    //
-    // The HelloWorld.png sprite is added to a world node that has a custom camera as described below.
-    //
-
-    
-    Size visibleSize = Director::getInstance()->getVisibleSize();
+    _screenSize = Director::getInstance()->getVisibleSize();
+    _previousTouchLocation = _touchLocation = _halfScreenSizeVect = Vec2(_screenSize.width * 0.5, _screenSize.height * 0.5);
     Vec2 origin = Director::getInstance()->getVisibleOrigin();
-    auto closeItem = MenuItemImage::create(
-                                           "CloseNormal.png",
-                                           "CloseSelected.png",
-                                           CC_CALLBACK_1(HelloWorld::menuCloseCallback, this));
-    closeItem->setScale(4.0);
-    
-	closeItem->setPosition(Vec2(origin.x + visibleSize.width * 0.5 ,
-                                origin.y + visibleSize.height * 0.5));
-
-    
-    Node * hud = Node::create();
-    this->addChild(hud);
-    auto menu = Menu::create(closeItem, NULL);
-    menu->setPosition(Vec2::ZERO);
-    hud->addChild(menu, 1);
-    
     
     auto label = Label::createWithTTF("Hello World", "fonts/Marker Felt.ttf", 24);
-    label->setPosition(Vec2(origin.x + visibleSize.width/2,
-                            origin.y + visibleSize.height - label->getContentSize().height));
+    label->setPosition(Vec2(origin.x + _screenSize.width/2,
+                            origin.y + _screenSize.height - label->getContentSize().height));
     this->addChild(label, 1);
 
-    Vec2 screenCenter = Vec2(visibleSize.width/2 + origin.x, visibleSize.height/2 + origin.y);
+    Vec2 screenCenter = Vec2(_screenSize.width/2 + origin.x, _screenSize.height/2 + origin.y);
     
-    auto sprite = Sprite::create("HelloWorld.png");
-    sprite->setPosition(screenCenter);
+    _sprite = Sprite::create("HelloWorld.png");
+    _sprite->setPosition(screenCenter);
 
     // Create the world Node that will get its own camera.
-    Node * worldContainer = Node::create();
+    _worldContainer = Node::create();
 
     // add the sprite as a child of the world container.
-    worldContainer->addChild(sprite, 0);
+    _worldContainer->addChild(_sprite, 0);
     
-    // Create camera 1 for the worldContainer, zoom it out to 400 points away from the HelloWorld.png
-    // sprite, and also shift the camera over to the left a distance of 1.5 screen widths. But since
-    // the camera is zoomed out, the HelloWorld.png sprite will be small and on the visible screen to
-    // the elft of the button.
-    Vec3 cameraStartPosition3D = Vec3(1.5 * screenCenter.x , screenCenter.y,0);
-    this->addChild(worldContainer);
-    worldContainer->setCameraMask((unsigned short)CameraFlag::USER1, true);
+    _zoomValue = 100;
+    _zoomDirection = 1.0;
+    _zoomStepSize = 3.0;
+    
+    _moveValue = _sprite->getPositionX();
+    _moveDirection = 1.0;
+    _moveStepSize = 5.0;
+
+    Vec3 cameraStartPosition3D = Vec3(_sprite->getPosition3D());
+    this->addChild(_worldContainer);
+    _worldContainer->setCameraMask((unsigned short)CameraFlag::USER1, true);
     float openGLFieldOfView = 60;
-    float openGLAspectRatio = visibleSize.width/visibleSize.height;
-    Camera * worldCamera = Camera::createPerspective(openGLFieldOfView, openGLAspectRatio, 1.0, 10000);
-    worldCamera->setCameraFlag(CameraFlag::USER1);
-    worldCamera->setPosition3D(cameraStartPosition3D + Vec3(0,0,400));
-    worldCamera->lookAt(cameraStartPosition3D , Vec3(0.0,1.0,0.0));
-    worldContainer->addChild(worldCamera);
-    worldContainer->setGlobalZOrder(1000);
+    _openGLAspectRatio = _screenSize.width/_screenSize.height;
+    float nearPlane = 1;
+    float farPlane = 1500.0;
+    _worldCamera = Camera::createPerspective(openGLFieldOfView, _openGLAspectRatio, nearPlane, farPlane);
+    _worldCamera->setCameraFlag(CameraFlag::USER1);
+    _worldCamera->setPosition3D(cameraStartPosition3D + Vec3(0,0,_zoomValue));
+    _worldCamera->lookAt(cameraStartPosition3D , Vec3(0.0,1.0,0.0));
+    _worldContainer->addChild(_worldCamera);
+    _worldContainer->setGlobalZOrder(1000);
+   
+    _zoomFarPlaneHeightFactor = tan(CC_DEGREES_TO_RADIANS(openGLFieldOfView) * 0.5); // For a field of view of 60 degrees, this would be 0.57735
+
+    this->setupTouchControls();
+    
+    this->schedule(schedule_selector(HelloWorld::update));
+    
     return true;
 }
 
-
-void HelloWorld::menuCloseCallback(Ref* pSender)
+void HelloWorld::onExit()
 {
-    CocosDenshion::SimpleAudioEngine::getInstance()->playEffect("zoom1.wav");
+    Layer::onExit();
+    _eventDispatcher->removeEventListener(_touchEventListener);
+}
+
+void HelloWorld::update(float dt)
+{
+    _zoomValue += _zoomDirection * _zoomStepSize;
+    
+    
+    if (_zoomValue > 1000)
+    {
+        _zoomDirection = -1.0;
+    }
+    else if (_zoomValue < 100)
+    {
+        _zoomDirection = 1.0;
+    }
+
+    _moveValue += _moveDirection * _moveStepSize;
+
+    if (_moveValue > 800)
+    {
+        _moveDirection = -1.0;
+    }
+    else if (_moveValue < -800)
+    {
+        _moveDirection = 1.0;
+    }
+
+    Vec3 currentPosition3D = _worldCamera->getPosition3D();
+    Vec2 currentPosition2D = _worldCamera->getPosition();
+
+    //if (_previousTouchLocation != _touchLocation)
+    {
+        _previousTouchLocation = _touchLocation;
+        float gamePlaneHalfHeight = _zoomValue * _zoomFarPlaneHeightFactor;
+        float gamePlaneHalfWidth = _openGLAspectRatio * gamePlaneHalfHeight;
+        
+        Vec2 touchLocationOffsetFromCenter = (_touchLocation - _halfScreenSizeVect);
+        Vec2 touchLocationNormal = Vec2(touchLocationOffsetFromCenter.x / _halfScreenSizeVect.x,
+                                        touchLocationOffsetFromCenter.y / _halfScreenSizeVect.y);
+        
+        Vec2 mappedTouchLocationOffset = Vec2(gamePlaneHalfWidth * touchLocationNormal.x, gamePlaneHalfHeight * touchLocationNormal.y);
+        Vec2 mappedTouchLocation = currentPosition2D + mappedTouchLocationOffset;
+        _sprite->setPosition(mappedTouchLocation);
+        
+        CCLOG("touchLocation:%.0f,%.0f  touchLocationNormal:%.2f,%.2f touchLocationOffsetFromCenter:%.0f,%.0f Touch:%.0f,%.0f => World:%.0f,%.0f  distantPlane:%.0f,%.0f",
+              _touchLocation.x, _touchLocation.y,
+              touchLocationNormal.x, touchLocationNormal.y,
+              touchLocationOffsetFromCenter.x, touchLocationOffsetFromCenter.y,
+              _touchLocation.x, _touchLocation.y,
+              mappedTouchLocation.x, mappedTouchLocation.y,
+              2 * gamePlaneHalfHeight, 2 * gamePlaneHalfWidth);
+    }
+    
+    _worldCamera->setPosition3D(Vec3(_moveValue, currentPosition3D.y, 0) + Vec3(0,0,_zoomValue));
+    _worldCamera->lookAt(Vec3(_moveValue, currentPosition3D.y, 0) , Vec3(0.0,1.0,0.0)); // Assumes all sprites are on the z=0 plane.
+}
+
+void HelloWorld::setupTouchControls()
+{
+    _touchEventListener = EventListenerTouchAllAtOnce::create();
+    
+    _touchEventListener->onTouchesBegan = [&](const std::vector<Touch*>& touches, Event *event)
+    {
+        for (auto touch : touches)
+        {
+            _touchLocation = touch->getLocation();
+            CCLOG("Start Touch:%.0f,%.0f", _touchLocation.x, _touchLocation.y);
+        }
+        
+    };
+    
+    _touchEventListener->onTouchesMoved = [&](const std::vector<Touch*>& touches, Event *event)
+    {
+        for (auto touch : touches)
+        {
+            _touchLocation = touch->getLocation();
+            CCLOG("Move Touch:%.0f,%.0f", _touchLocation.x, _touchLocation.y);
+        }
+    };
+    
+    _touchEventListener->onTouchesEnded = [&](const std::vector<Touch*>& touches, Event *event)
+    {
+        for (auto touch : touches)
+        {
+            cocos2d::Vec2 location = touch->getLocation();
+            CCLOG("End Touch:%.0f,%.0f", location.x, location.y);
+        }
+    };
+    
+    _touchEventListener->onTouchesCancelled = [&](const std::vector<Touch*>& touches, Event *event)
+    {
+        for (auto touch : touches)
+        {
+            cocos2d::Vec2 location = touch->getLocation();
+            CCLOG("Cancel Touch:%.0f,%.0f", location.x, location.y);
+        }
+    };
+    
+    _eventDispatcher->addEventListenerWithSceneGraphPriority(_touchEventListener, this);
 }
