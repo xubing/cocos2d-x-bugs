@@ -30,7 +30,9 @@ private:
     cocos2d::Vec2                           _touchLocation;
     cocos2d::Vec2                           _previousTouchLocation;
     cocos2d::Sprite                         * _sprite;
-    cocos2d::Size                           _screenSize;
+    cocos2d::Rect                           _visibleRect;
+    cocos2d::Size                           _winSize;
+    cocos2d::Size                           _winSizePixels;
     cocos2d::Vec2                           _halfScreenSizeVect;
 };
 

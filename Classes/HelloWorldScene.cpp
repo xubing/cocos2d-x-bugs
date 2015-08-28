@@ -18,16 +18,20 @@ bool HelloWorld::init()
         return false;
     }
     
-    _screenSize = Director::getInstance()->getVisibleSize();
-    _previousTouchLocation = _touchLocation = _halfScreenSizeVect = Vec2(_screenSize.width * 0.5, _screenSize.height * 0.5);
+    Size visibleSize = Director::getInstance()->getVisibleSize();
     Vec2 origin = Director::getInstance()->getVisibleOrigin();
+    _visibleRect = Rect(origin, visibleSize);
+    _winSize = Director::getInstance()->getWinSize();
+    _winSizePixels = Director::getInstance()->getWinSizeInPixels();
+    
+    _previousTouchLocation = _touchLocation = _halfScreenSizeVect = Vec2(_visibleRect.size.width * 0.5, _visibleRect.size.height * 0.5);
     
     auto label = Label::createWithTTF("Hello World", "fonts/Marker Felt.ttf", 24);
-    label->setPosition(Vec2(origin.x + _screenSize.width/2,
-                            origin.y + _screenSize.height - label->getContentSize().height));
+    label->setPosition(Vec2(origin.x + _visibleRect.size.width/2,
+                            origin.y + _visibleRect.size.height - label->getContentSize().height));
     this->addChild(label, 1);
 
-    Vec2 screenCenter = Vec2(_screenSize.width/2 + origin.x, _screenSize.height/2 + origin.y);
+    Vec2 screenCenter = Vec2(_visibleRect.size.width/2 + origin.x, _visibleRect.size.height/2 + origin.y);
     
     _sprite = Sprite::create("HelloWorld.png");
     _sprite->setPosition(screenCenter);
@@ -50,7 +54,7 @@ bool HelloWorld::init()
     this->addChild(_worldContainer);
     _worldContainer->setCameraMask((unsigned short)CameraFlag::USER1, true);
     float openGLFieldOfView = 60;
-    _openGLAspectRatio = _screenSize.width/_screenSize.height;
+    _openGLAspectRatio = _winSize.width/_winSize.height;
     float nearPlane = 1;
     float farPlane = 1500.0;
     _worldCamera = Camera::createPerspective(openGLFieldOfView, _openGLAspectRatio, nearPlane, farPlane);
@@ -105,11 +109,12 @@ void HelloWorld::update(float dt)
 
     //if (_previousTouchLocation != _touchLocation)
     {
+        Vec2 touchLocation = _touchLocation - _visibleRect.origin;
         _previousTouchLocation = _touchLocation;
         float gamePlaneHalfHeight = _zoomValue * _zoomFarPlaneHeightFactor;
         float gamePlaneHalfWidth = _openGLAspectRatio * gamePlaneHalfHeight;
         
-        Vec2 touchLocationOffsetFromCenter = (_touchLocation - _halfScreenSizeVect);
+        Vec2 touchLocationOffsetFromCenter = (touchLocation - _halfScreenSizeVect);
         Vec2 touchLocationNormal = Vec2(touchLocationOffsetFromCenter.x / _halfScreenSizeVect.x,
                                         touchLocationOffsetFromCenter.y / _halfScreenSizeVect.y);
         
@@ -117,13 +122,12 @@ void HelloWorld::update(float dt)
         Vec2 mappedTouchLocation = currentPosition2D + mappedTouchLocationOffset;
         _sprite->setPosition(mappedTouchLocation);
         
-        CCLOG("touchLocation:%.0f,%.0f  touchLocationNormal:%.2f,%.2f touchLocationOffsetFromCenter:%.0f,%.0f Touch:%.0f,%.0f => World:%.0f,%.0f  distantPlane:%.0f,%.0f",
-              _touchLocation.x, _touchLocation.y,
-              touchLocationNormal.x, touchLocationNormal.y,
-              touchLocationOffsetFromCenter.x, touchLocationOffsetFromCenter.y,
-              _touchLocation.x, _touchLocation.y,
-              mappedTouchLocation.x, mappedTouchLocation.y,
-              2 * gamePlaneHalfHeight, 2 * gamePlaneHalfWidth);
+        CCLOG("touchLocation:%.2f,%.2f visibleRect:%.2f,%.2f,%.2f,%.2f  winSize:%.2f,%.2f  winSizePix:%.2f,%.2f",
+              touchLocation.x, touchLocation.y,
+              _visibleRect.origin.x, _visibleRect.origin.y,
+              _visibleRect.size.width, _visibleRect.size.height,
+              _winSize.width, _winSize.height,
+              _winSizePixels.width, _winSizePixels.height);
     }
     
     _worldCamera->setPosition3D(Vec3(_moveValue, currentPosition3D.y, 0) + Vec3(0,0,_zoomValue));
